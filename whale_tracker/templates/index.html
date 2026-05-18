@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket Whale Tracker</title>
+  <style>
+    /* ── reset / base ───────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2128;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --green:     #3fb950;
+      --red:       #f85149;
+      --yellow:    #d29922;
+      --text:      #e6edf3;
+      --muted:     #8b949e;
+      --radius:    8px;
+      --mono:      "SF Mono", "Fira Code", "Cascadia Code", monospace;
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── layout ─────────────────────────────────────────────── */
+    .shell {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px;
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 20px;
+      min-height: 100%;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.4px; }
+    header h1 span { color: var(--accent); }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--yellow);
+      flex-shrink: 0;
+      transition: background .4s;
+    }
+    .dot.live   { background: var(--green); animation: pulse 2s infinite; }
+    .dot.mock   { background: var(--yellow); }
+    .dot.error  { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .4; }
+    }
+
+    /* ── summary cards ──────────────────────────────────────── */
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-value.pos { color: var(--green); }
+    .card-value.neg { color: var(--red); }
+    .card-value.neu { color: var(--text); }
+
+    .card-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+    }
+
+    /* ── main columns ───────────────────────────────────────── */
+    .columns {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .columns { grid-template-columns: 1fr; }
+    }
+
+    /* ── panel ──────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .panel-header .count {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 1px 8px;
+      font-size: 11px;
+    }
+
+    /* ── whale list ─────────────────────────────────────────── */
+    .whale-item {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      transition: background .15s;
+    }
+    .whale-item:last-child { border-bottom: none; }
+    .whale-item:hover { background: var(--surface2); }
+
+    .whale-rank {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .whale-addr {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--accent);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .whale-meta { font-size: 11px; color: var(--muted); }
+
+    .wr-badge {
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .wr-high  { background: rgba(63,185,80,.15); color: var(--green); }
+    .wr-mid   { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .wr-low   { background: rgba(248,81,73,.15);  color: var(--red); }
+
+    /* ── right column stacked panels ───────────────────────── */
+    .right-col { display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── trade feed & positions table ───────────────────────── */
+    .scrollable { overflow-y: auto; max-height: 340px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead th {
+      position: sticky; top: 0;
+      background: var(--surface);
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    td { padding: 10px 12px; vertical-align: middle; }
+
+    .mono { font-family: var(--mono); }
+    .muted { color: var(--muted); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .badge-yes  { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-no   { background: rgba(248,81,73,.15);  color: var(--red); }
+    .badge-open { background: rgba(88,166,255,.15); color: var(--accent); }
+    .badge-won  { background: rgba(63,185,80,.15);  color: var(--green); }
+    .badge-lost { background: rgba(248,81,73,.15);  color: var(--red); }
+
+    .pnl-pos { color: var(--green); font-weight: 700; }
+    .pnl-neg { color: var(--red);   font-weight: 700; }
+    .pnl-neu { color: var(--muted); }
+
+    /* odds bar */
+    .odds-cell { display: flex; align-items: center; gap: 6px; }
+    .odds-bar-bg {
+      flex: 1; height: 4px; background: var(--border); border-radius: 2px;
+      min-width: 40px;
+    }
+    .odds-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .5s; }
+
+    /* ── next poll countdown ────────────────────────────────── */
+    .countdown { font-variant-numeric: tabular-nums; }
+
+    /* ── empty state ────────────────────────────────────────── */
+    .empty {
+      padding: 40px 16px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* ── flicker animation for new rows ─────────────────────── */
+    @keyframes flicker {
+      0%  { background: rgba(88,166,255,.18); }
+      100%{ background: transparent; }
+    }
+    .new-row { animation: flicker 1.6s ease-out; }
+
+    /* ── scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- ── Header ──────────────────────────────────────────────── -->
+  <header>
+    <h1>🐋 Polymarket <span>Whale Tracker</span></h1>
+    <div class="status-bar">
+      <div class="dot" id="statusDot"></div>
+      <span id="statusText">Connecting…</span>
+      &nbsp;·&nbsp;
+      Next poll: <span class="countdown" id="countdown">–</span>s
+      &nbsp;·&nbsp;
+      Last update: <span id="lastUpdate">–</span>
+    </div>
+  </header>
+
+  <!-- ── Summary cards ───────────────────────────────────────── -->
+  <div class="summary-row">
+    <div class="card">
+      <div class="card-label">Total P&amp;L</div>
+      <div class="card-value" id="totalPnl">–</div>
+      <div class="card-sub" id="totalRoi">–</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Total Staked</div>
+      <div class="card-value neu" id="totalStaked">–</div>
+      <div class="card-sub" id="posCount">–</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Open Positions</div>
+      <div class="card-value neu" id="openCount">–</div>
+      <div class="card-sub" id="openDetail">–</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Win / Loss</div>
+      <div class="card-value neu" id="winLoss">–</div>
+      <div class="card-sub" id="winRate">–</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Whales Tracked</div>
+      <div class="card-value neu" id="whaleCount">–</div>
+      <div class="card-sub" id="whaleStatus">–</div>
+    </div>
+  </div>
+
+  <!-- ── Main columns ────────────────────────────────────────── -->
+  <div class="columns">
+
+    <!-- LEFT: whale list -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          Top Whales
+          <span class="count" id="whaleCountBadge">0</span>
+        </div>
+        <div id="whaleList">
+          <div class="empty">Loading whales…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: trades + positions -->
+    <div class="right-col">
+
+      <!-- Trade feed -->
+      <div class="panel">
+        <div class="panel-header">
+          Live Trade Feed
+          <span class="count" id="tradeFeedCount">0</span>
+        </div>
+        <div class="scrollable">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Wallet</th>
+                <th>Market</th>
+                <th>Side</th>
+                <th>Odds</th>
+                <th>Size</th>
+              </tr>
+            </thead>
+            <tbody id="tradeFeed">
+              <tr><td colspan="6" class="empty">Waiting for trades…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Simulated positions -->
+      <div class="panel">
+        <div class="panel-header">
+          My Simulated Portfolio (€100 / trade)
+          <span class="count" id="portfolioBadge">0</span>
+        </div>
+        <div class="scrollable">
+          <table>
+            <thead>
+              <tr>
+                <th>Market</th>
+                <th>Side</th>
+                <th>Entry</th>
+                <th>Now</th>
+                <th>Status</th>
+                <th>P&amp;L</th>
+              </tr>
+            </thead>
+            <tbody id="positionTable">
+              <tr><td colspan="6" class="empty">No positions yet…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /right-col -->
+  </div><!-- /columns -->
+
+</div><!-- /shell -->
+
+<script>
+  /* ── state ─────────────────────────────────────────────────── */
+  const POLL_MS = 30_000;
+
+  let knownTradeIds   = new Set();
+  let knownPosIds     = new Set();
+  let nextPollIn      = null;   // seconds
+  let countdownTimer  = null;
+
+  /* ── fetch & render ─────────────────────────────────────────── */
+  async function fetchState() {
+    try {
+      const res = await fetch('/api/state');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      render(data);
+    } catch (e) {
+      setStatus('error', 'Connection error');
+      console.error(e);
+    }
+    setTimeout(fetchState, POLL_MS);
+  }
+
+  function render(d) {
+    setStatus(d.scraper_status, d.scraper_status === 'live' ? 'Live data' : 'Demo mode');
+    renderSummary(d.portfolio.summary, d.whales.length, d.scraper_status);
+    renderWhales(d.whales);
+    renderTrades(d.trades);
+    renderPositions(d.portfolio.positions);
+
+    document.getElementById('lastUpdate').textContent = fmtTime(d.server_time_utc);
+
+    // countdown
+    nextPollIn = d.next_poll_in_s ?? POLL_MS / 1000;
+    startCountdown(nextPollIn);
+  }
+
+  /* ── status dot ─────────────────────────────────────────────── */
+  function setStatus(status, label) {
+    const dot  = document.getElementById('statusDot');
+    const text = document.getElementById('statusText');
+    dot.className = 'dot ' + (status === 'live' ? 'live' : status === 'error' ? 'error' : 'mock');
+    text.textContent = label;
+  }
+
+  /* ── summary cards ──────────────────────────────────────────── */
+  function renderSummary(s, whaleCount, scraperStatus) {
+    const pnl = s.total_pnl_eur;
+    const el  = document.getElementById('totalPnl');
+    el.textContent = fmtEur(pnl);
+    el.className = 'card-value ' + (pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : 'neu');
+
+    document.getElementById('totalRoi').textContent =
+      `ROI: ${pnl >= 0 ? '+' : ''}${s.roi_pct}%`;
+
+    document.getElementById('totalStaked').textContent  = fmtEur(s.total_staked_eur);
+    document.getElementById('posCount').textContent     = `${s.open + s.won + s.lost} total positions`;
+    document.getElementById('openCount').textContent    = s.open;
+    document.getElementById('openDetail').textContent   = `positions open`;
+    document.getElementById('winLoss').textContent      = `${s.won} / ${s.lost}`;
+    document.getElementById('winRate').textContent      =
+      (s.won + s.lost) > 0
+        ? `Win rate: ${Math.round(s.won / (s.won + s.lost) * 100)}%`
+        : 'No resolved bets yet';
+    document.getElementById('whaleCount').textContent   = whaleCount;
+    document.getElementById('whaleStatus').textContent  =
+      scraperStatus === 'live' ? 'Live scrape' : 'Demo data';
+  }
+
+  /* ── whale list ─────────────────────────────────────────────── */
+  function renderWhales(whales) {
+    const container = document.getElementById('whaleList');
+    document.getElementById('whaleCountBadge').textContent = whales.length;
+
+    if (!whales.length) {
+      container.innerHTML = '<div class="empty">Loading whales…</div>';
+      return;
+    }
+
+    container.innerHTML = whales.map((w, i) => {
+      const wr    = w.win_rate;
+      const cls   = wr >= 75 ? 'wr-high' : wr >= 60 ? 'wr-mid' : 'wr-low';
+      const short = shortAddr(w.address);
+      return `
+        <div class="whale-item">
+          <div class="whale-rank">${i + 1}</div>
+          <div>
+            <div class="whale-addr" title="${w.address}">${short}</div>
+            <div class="whale-meta">${w.total_trades} trades</div>
+          </div>
+          <div class="wr-badge ${cls}">${wr.toFixed(1)}%</div>
+        </div>`;
+    }).join('');
+  }
+
+  /* ── trade feed ─────────────────────────────────────────────── */
+  function renderTrades(trades) {
+    const tbody = document.getElementById('tradeFeed');
+    document.getElementById('tradeFeedCount').textContent = trades.length;
+
+    if (!trades.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No trades yet…</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = trades.map(t => {
+      const isNew  = !knownTradeIds.has(tradeId(t));
+      const cls    = isNew ? ' class="new-row"' : '';
+      const sideCls = t.position === 'Yes' ? 'badge-yes' : 'badge-no';
+      return `
+        <tr${cls}>
+          <td class="muted mono">${fmtTime(t.timestamp)}</td>
+          <td class="mono accent" title="${t.wallet}">${shortAddr(t.wallet)}</td>
+          <td>${truncate(t.market, 38)}</td>
+          <td><span class="badge ${sideCls}">${t.position}</span></td>
+          <td>
+            <div class="odds-cell">
+              <span class="mono">${pct(t.odds)}</span>
+              <div class="odds-bar-bg"><div class="odds-bar-fill" style="width:${t.odds*100}%"></div></div>
+            </div>
+          </td>
+          <td class="mono">$${fmtNum(t.amount)}</td>
+        </tr>`;
+    }).join('');
+
+    // Mark all as seen
+    trades.forEach(t => knownTradeIds.add(tradeId(t)));
+  }
+
+  /* ── positions table ────────────────────────────────────────── */
+  function renderPositions(positions) {
+    const tbody = document.getElementById('positionTable');
+    document.getElementById('portfolioBadge').textContent = positions.length;
+
+    if (!positions.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">No positions yet…</td></tr>';
+      return;
+    }
+
+    // Sort: open first, then by P&L desc
+    const sorted = [...positions].sort((a, b) => {
+      if (a.status === 'open' && b.status !== 'open') return -1;
+      if (b.status === 'open' && a.status !== 'open') return  1;
+      return b.pnl_eur - a.pnl_eur;
+    });
+
+    tbody.innerHTML = sorted.map(p => {
+      const isNew  = !knownPosIds.has(p.id);
+      const cls    = isNew ? ' class="new-row"' : '';
+      const sideCls = p.position === 'Yes' ? 'badge-yes' : 'badge-no';
+      const statusCls = `badge-${p.status}`;
+      const pnlCls = p.pnl_eur > 0 ? 'pnl-pos' : p.pnl_eur < 0 ? 'pnl-neg' : 'pnl-neu';
+      const pnlSign = p.pnl_eur > 0 ? '+' : '';
+      // price movement arrow
+      const arrow = p.status === 'open'
+        ? (p.current_price > p.entry_odds ? ' ↑' : p.current_price < p.entry_odds ? ' ↓' : '')
+        : '';
+      return `
+        <tr${cls}>
+          <td>${truncate(p.market, 34)}</td>
+          <td><span class="badge ${sideCls}">${p.position}</span></td>
+          <td class="mono">${pct(p.entry_odds)}</td>
+          <td class="mono">${p.status === 'open' ? pct(p.current_price) + arrow : '–'}</td>
+          <td><span class="badge ${statusCls}">${p.status}</span></td>
+          <td class="mono ${pnlCls}">${pnlSign}${fmtEur(p.pnl_eur)}</td>
+        </tr>`;
+    }).join('');
+
+    positions.forEach(p => knownPosIds.add(p.id));
+  }
+
+  /* ── countdown ──────────────────────────────────────────────── */
+  function startCountdown(secs) {
+    clearInterval(countdownTimer);
+    let s = Math.max(0, Math.round(secs));
+    document.getElementById('countdown').textContent = s;
+    countdownTimer = setInterval(() => {
+      s = Math.max(0, s - 1);
+      document.getElementById('countdown').textContent = s;
+      if (s === 0) clearInterval(countdownTimer);
+    }, 1000);
+  }
+
+  /* ── helpers ────────────────────────────────────────────────── */
+  function shortAddr(addr) {
+    if (!addr || addr.length < 12) return addr;
+    return addr.slice(0, 6) + '…' + addr.slice(-4);
+  }
+
+  function tradeId(t) {
+    return `${t.wallet}|${t.market}|${t.timestamp}`;
+  }
+
+  function truncate(s, n) {
+    if (!s) return '–';
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
+  }
+
+  function pct(v) {
+    if (v == null) return '–';
+    return (v * 100).toFixed(1) + '%';
+  }
+
+  function fmtEur(v) {
+    if (v == null) return '–';
+    return (v >= 0 ? '+€' : '-€') + Math.abs(v).toLocaleString('en-IE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function fmtNum(v) {
+    if (v == null) return '–';
+    return v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return '–';
+    const d = new Date(iso);
+    return d.toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  /* ── boot ───────────────────────────────────────────────────── */
+  fetchState();
+</script>
+</body>
+</html>
