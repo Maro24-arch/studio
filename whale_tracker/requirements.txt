@@ -5,3 +5,4 @@ beautifulsoup4>=4.12.0
 cloudscraper>=1.2.71
 lxml>=5.0.0
 python-dotenv>=1.0.0
+# egypt_monitor.py — no extra deps needed beyond the above
